@@ -29,16 +29,16 @@ from torch.optim.lr_scheduler import get_cosine_schedule_with_warmup
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from config import ModelConfig, TrainConfig
+from config import ModelConfig, TrainConfig, DRIVE_ROOT
 from dataset import FAKEREASONDataset, collate_fn
 from model import ColmboDF
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train COLMBO-DF")
-    p.add_argument("--manifest_train", default="data/fakereason_train.json")
-    p.add_argument("--manifest_eval",  default="data/fakereason_eval.json")
-    p.add_argument("--output_dir",     default="checkpoints")
+    p.add_argument("--manifest_train", default=f"{DRIVE_ROOT}/fakereason_train.json")
+    p.add_argument("--manifest_eval",  default=f"{DRIVE_ROOT}/fakereason_eval.json")
+    p.add_argument("--output_dir",     default=f"{DRIVE_ROOT}/checkpoints")
     p.add_argument("--mode",           default="shortcot",
                    choices=["cot", "shortcot", "nocot"])
     p.add_argument("--encoder_name",   default="microsoft/wavlm-base-plus")

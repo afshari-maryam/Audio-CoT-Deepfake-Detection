@@ -20,6 +20,8 @@ import re
 from pathlib import Path
 from typing import Dict, Optional
 
+from config import DRIVE_ROOT
+
 # ── Prompt templates (Figure 3) ──────────────────────────────────────────────
 
 COT_SYSTEM_PROMPT = (
@@ -172,8 +174,10 @@ def generate_cot_for_sample(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate CoT annotations for FAKEREASON")
-    parser.add_argument("--manifest",  required=True, help="Input JSON manifest (no CoT yet)")
-    parser.add_argument("--output",    required=True, help="Output JSON manifest with CoT")
+    parser.add_argument("--manifest",  default=f"{DRIVE_ROOT}/fakereason_train.json",
+                        help="Input JSON manifest (no CoT yet)")
+    parser.add_argument("--output",    default=f"{DRIVE_ROOT}/fakereason_train.json",
+                        help="Output JSON manifest with CoT (overwrites in place)")
     parser.add_argument("--model",     default="Qwen/Qwen3-30B-A3B-Instruct",
                         help="HuggingFace model id for CoT generation")
     parser.add_argument("--device",    default="cuda", help="Torch device")

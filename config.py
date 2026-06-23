@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
 
+# Root directory on Google Drive — all outputs go here, outside the git repo
+DRIVE_ROOT = "/content/drive/MyDrive/COLMBO-DF-checkpoints"
+
 
 @dataclass
 class ModelConfig:
@@ -14,9 +17,9 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
-    manifest_train: str = "data/fakereason_train.json"
-    manifest_eval: str = "data/fakereason_eval.json"
-    output_dir: str = "checkpoints"
+    manifest_train: str = f"{DRIVE_ROOT}/fakereason_train.json"
+    manifest_eval: str = f"{DRIVE_ROOT}/fakereason_eval.json"
+    output_dir: str = f"{DRIVE_ROOT}/checkpoints"
     batch_size: int = 4
     grad_accumulation_steps: int = 4
     learning_rate: float = 1e-4

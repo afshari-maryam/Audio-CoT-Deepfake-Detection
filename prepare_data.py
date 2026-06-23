@@ -30,6 +30,7 @@ Usage
 import argparse
 import json
 import random
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -191,36 +192,52 @@ def build_cosyfish_pairs(cosyfish_root: Path, seed: int = 42) -> List[Dict]:
 
 # ── Feature extraction ────────────────────────────────────────────────────────
 
+def _extract_one(item: Dict) -> Dict:
+    """Worker function: extract features for one pair (runs in subprocess)."""
+    item["features1"] = extract_features(item["audio1"])
+    item["features2"] = extract_features(item["audio2"])
+    item["cot"]       = ""
+    item["cot_short"] = ""
+    return item
+
+
 def add_features(
     pairs: List[Dict],
     checkpoint_path: Optional[Path] = None,
     save_every: int = 100,
+    num_workers: int = 4,
 ) -> List[Dict]:
-    """Extract features with incremental checkpointing so runs can be resumed."""
-    # Load existing progress if checkpoint exists
+    """Extract features in parallel with incremental checkpointing."""
     done: List[Dict] = []
     if checkpoint_path and checkpoint_path.exists():
         with open(checkpoint_path) as f:
             done = json.load(f)
         print(f"  Resuming from checkpoint: {len(done)}/{len(pairs)} done")
 
-    start = len(done)
-    remaining = pairs[start:]
+    remaining = pairs[len(done):]
+    if not remaining:
+        return done
 
-    for i, item in enumerate(tqdm(remaining, desc="Extracting features",
-                                  initial=start, total=len(pairs))):
-        item["features1"] = extract_features(item["audio1"])
-        item["features2"] = extract_features(item["audio2"])
-        item["cot"]       = ""
-        item["cot_short"] = ""
-        done.append(item)
+    pbar = tqdm(total=len(pairs), initial=len(done), desc="Extracting features")
 
-        # Save checkpoint every `save_every` items
-        if checkpoint_path and (i + 1) % save_every == 0:
-            with open(checkpoint_path, "w") as f:
-                json.dump(done, f)
+    with ProcessPoolExecutor(max_workers=num_workers) as pool:
+        futures = {pool.submit(_extract_one, item): i
+                   for i, item in enumerate(remaining)}
+        # Collect in completion order, then re-sort to keep original order
+        results = [None] * len(remaining)
+        for fut in as_completed(futures):
+            idx = futures[fut]
+            results[idx] = fut.result()
+            pbar.update(1)
+            if (len(done) + idx + 1) % save_every == 0 and checkpoint_path:
+                # Save what we have so far (only fully-done items)
+                partial = done + [r for r in results[:idx+1] if r is not None]
+                with open(checkpoint_path, "w") as f:
+                    json.dump(partial, f)
 
-    # Final save to checkpoint
+    pbar.close()
+    done.extend(results)
+
     if checkpoint_path:
         with open(checkpoint_path, "w") as f:
             json.dump(done, f)
@@ -240,6 +257,8 @@ def main():
                         help="Directory on Drive for incremental checkpoints")
     parser.add_argument("--save_every",      type=int, default=100,
                         help="Save checkpoint every N feature extractions")
+    parser.add_argument("--num_workers",     type=int, default=4,
+                        help="Parallel workers for feature extraction")
     parser.add_argument("--same_spkr_ratio", type=float, default=0.5)
     parser.add_argument("--seed",            type=int, default=42)
     args = parser.parse_args()
@@ -273,9 +292,9 @@ def main():
         eval_pairs  += cf_pairs[split_idx:]
 
     print("Extracting acoustic features for train …")
-    train_pairs = add_features(train_pairs, ckpt_train, args.save_every)
+    train_pairs = add_features(train_pairs, ckpt_train, args.save_every, args.num_workers)
     print("Extracting acoustic features for eval …")
-    eval_pairs  = add_features(eval_pairs,  ckpt_eval,  args.save_every)
+    eval_pairs  = add_features(eval_pairs,  ckpt_eval,  args.save_every, args.num_workers)
 
     # Write final manifests to Drive
     with open(out_train, "w") as f:

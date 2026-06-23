@@ -37,6 +37,8 @@ from tqdm import tqdm
 
 from features import extract_features
 
+CHECKPOINT_DIR_DEFAULT = "/content/drive/MyDrive/COLMBO-DF-checkpoints"
+
 
 # ── ASVspoof 2019 LA protocol parser ─────────────────────────────────────────
 
@@ -189,28 +191,71 @@ def build_cosyfish_pairs(cosyfish_root: Path, seed: int = 42) -> List[Dict]:
 
 # ── Feature extraction ────────────────────────────────────────────────────────
 
-def add_features(pairs: List[Dict]) -> List[Dict]:
-    for item in tqdm(pairs, desc="Extracting features"):
+def add_features(
+    pairs: List[Dict],
+    checkpoint_path: Optional[Path] = None,
+    save_every: int = 100,
+) -> List[Dict]:
+    """Extract features with incremental checkpointing so runs can be resumed."""
+    # Load existing progress if checkpoint exists
+    done: List[Dict] = []
+    if checkpoint_path and checkpoint_path.exists():
+        with open(checkpoint_path) as f:
+            done = json.load(f)
+        print(f"  Resuming from checkpoint: {len(done)}/{len(pairs)} done")
+
+    start = len(done)
+    remaining = pairs[start:]
+
+    for i, item in enumerate(tqdm(remaining, desc="Extracting features",
+                                  initial=start, total=len(pairs))):
         item["features1"] = extract_features(item["audio1"])
         item["features2"] = extract_features(item["audio2"])
-        item["cot"]       = ""   # filled later by generate_cot.py
+        item["cot"]       = ""
         item["cot_short"] = ""
-    return pairs
+        done.append(item)
+
+        # Save checkpoint every `save_every` items
+        if checkpoint_path and (i + 1) % save_every == 0:
+            with open(checkpoint_path, "w") as f:
+                json.dump(done, f)
+
+    # Final save to checkpoint
+    if checkpoint_path:
+        with open(checkpoint_path, "w") as f:
+            json.dump(done, f)
+
+    return done
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Build FAKEREASON manifest")
-    parser.add_argument("--asvspoof_root",  required=True)
-    parser.add_argument("--cosyfish_root",  default=None)
-    parser.add_argument("--output_train",   default="data/fakereason_train.json")
-    parser.add_argument("--output_eval",    default="data/fakereason_eval.json")
+    parser.add_argument("--asvspoof_root",   required=True)
+    parser.add_argument("--cosyfish_root",   default=None)
+    parser.add_argument("--output_train",    default="data/fakereason_train.json")
+    parser.add_argument("--output_eval",     default="data/fakereason_eval.json")
+    parser.add_argument("--checkpoint_dir",  default=CHECKPOINT_DIR_DEFAULT,
+                        help="Directory on Drive for incremental checkpoints")
+    parser.add_argument("--save_every",      type=int, default=100,
+                        help="Save checkpoint every N feature extractions")
     parser.add_argument("--same_spkr_ratio", type=float, default=0.5)
-    parser.add_argument("--seed",           type=int, default=42)
+    parser.add_argument("--seed",            type=int, default=42)
     args = parser.parse_args()
 
     asvspoof_root = Path(args.asvspoof_root)
+    ckpt_dir = Path(args.checkpoint_dir)
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    # Final manifests go to the checkpoint dir (outside the git repo)
+    out_train = ckpt_dir / "fakereason_train.json"
+    out_eval  = ckpt_dir / "fakereason_eval.json"
+    # Incremental checkpoint files (separate from finals)
+    ckpt_train = ckpt_dir / "fakereason_train_ckpt.json"
+    ckpt_eval  = ckpt_dir / "fakereason_eval_ckpt.json"
+
+    # Also keep local symlinks in data/ so existing code doesn't need changes
     Path(args.output_train).parent.mkdir(parents=True, exist_ok=True)
 
     print("Parsing ASVspoof 2019 LA …")
@@ -223,16 +268,22 @@ def main():
     if args.cosyfish_root:
         print("Adding CosyFish pairs …")
         cf_pairs = build_cosyfish_pairs(Path(args.cosyfish_root), args.seed)
-        # 80/20 split for CosyFish
         split_idx = int(0.8 * len(cf_pairs))
         train_pairs += cf_pairs[:split_idx]
         eval_pairs  += cf_pairs[split_idx:]
 
     print("Extracting acoustic features for train …")
-    train_pairs = add_features(train_pairs)
+    train_pairs = add_features(train_pairs, ckpt_train, args.save_every)
     print("Extracting acoustic features for eval …")
-    eval_pairs  = add_features(eval_pairs)
+    eval_pairs  = add_features(eval_pairs,  ckpt_eval,  args.save_every)
 
+    # Write final manifests to Drive
+    with open(out_train, "w") as f:
+        json.dump(train_pairs, f, indent=2)
+    with open(out_eval, "w") as f:
+        json.dump(eval_pairs, f, indent=2)
+
+    # Write local copies so train.py / generate_cot.py find them without changes
     with open(args.output_train, "w") as f:
         json.dump(train_pairs, f, indent=2)
     with open(args.output_eval, "w") as f:
@@ -240,7 +291,8 @@ def main():
 
     print(f"Train pairs: {len(train_pairs)}")
     print(f"Eval  pairs: {len(eval_pairs)}")
-    print(f"Saved to {args.output_train} and {args.output_eval}")
+    print(f"Saved to Drive: {out_train}")
+    print(f"Saved to Drive: {out_eval}")
     print("Next step: run generate_cot.py to add CoT annotations.")
 
 

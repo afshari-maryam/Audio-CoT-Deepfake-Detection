@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Data & checkpoints (ذخیره روی Drive، نه گیت)
+data/
+checkpoints/
+results/
+
+# Jupyter
+.ipynb_checkpoints/

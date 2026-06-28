@@ -79,23 +79,37 @@ SHORT_COT_SYSTEM = (
 )
 
 
-# ── HuggingFace inference helper ──────────────────────────────────────────────
+# ── HuggingFace model singleton (loaded once, reused for all samples) ─────────
+
+_MODEL = None
+_TOKENIZER = None
+
+
+def _load_model(model_name: str, device: str):
+    """Load model and tokenizer once and cache them globally."""
+    global _MODEL, _TOKENIZER
+    if _MODEL is None:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        import torch
+        print(f"Loading model {model_name} ...")
+        _TOKENIZER = AutoTokenizer.from_pretrained(model_name)
+        _MODEL = AutoModelForCausalLM.from_pretrained(
+            model_name, torch_dtype=torch.bfloat16, device_map=device
+        )
+        print("Model loaded.")
+    return _MODEL, _TOKENIZER
+
 
 def _hf_generate(
     model_name: str,
     system: str,
     user: str,
     max_new_tokens: int = 1024,
-    device: str = "cpu",
+    device: str = "cuda",
 ) -> str:
-    """Run generation with a local HuggingFace model."""
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    """Run generation reusing the already-loaded model."""
     import torch
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch.bfloat16, device_map=device
-    )
+    model, tokenizer = _load_model(model_name, device)
     messages = [
         {"role": "system", "content": system},
         {"role": "user",   "content": user},
@@ -178,7 +192,7 @@ def main():
                         help="Input JSON manifest (no CoT yet)")
     parser.add_argument("--output",    default=f"{DRIVE_ROOT}/fakereason_train.json",
                         help="Output JSON manifest with CoT (overwrites in place)")
-    parser.add_argument("--model",     default="Qwen/Qwen3-30B-A3B-Instruct",
+    parser.add_argument("--model",     default="Qwen/Qwen3-8B",
                         help="HuggingFace model id for CoT generation")
     parser.add_argument("--device",    default="cuda", help="Torch device")
     parser.add_argument("--short",     action="store_true", help="Also generate cot_short")

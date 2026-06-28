@@ -29,6 +29,8 @@ from typing import Dict, List, Optional
 
 import torch
 import torchaudio
+import soundfile as sf
+import numpy as np
 from torch.utils.data import Dataset
 
 from features import serialize_features
@@ -125,14 +127,17 @@ def _load_waveform(
     path: str, target_sr: int = 16000, max_len: int = 80000
 ) -> torch.Tensor:
     """Load, resample, mono-mix, and truncate/pad a waveform to max_len."""
-    wav, sr = torchaudio.load(path)
+    try:
+        # soundfile handles flac reliably on Drive
+        data, sr = sf.read(path, dtype="float32", always_2d=True)
+        wav = torch.from_numpy(data.T)  # (channels, T)
+    except Exception:
+        wav, sr = torchaudio.load(path)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
-    # Mix to mono
     if wav.shape[0] > 1:
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.squeeze(0)  # (T,)
-    # Truncate or zero-pad
     if wav.shape[0] >= max_len:
         wav = wav[:max_len]
     else:

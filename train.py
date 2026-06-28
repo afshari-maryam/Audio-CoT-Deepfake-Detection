@@ -165,7 +165,7 @@ def main():
 
     # ── Mixed precision scaler ───────────────────────────────────────────────
     use_amp = device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     # ── Training loop ────────────────────────────────────────────────────────
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
@@ -180,7 +180,7 @@ def main():
             input_ids = batch["input_ids"].to(device)
             labels    = batch["labels"].to(device)
 
-            with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16):
+            with torch.amp.autocast("cuda", enabled=use_amp, dtype=torch.bfloat16):
                 out = model(waveform1, waveform2, input_ids, labels=labels)
                 loss = out.loss / args.grad_accum
 

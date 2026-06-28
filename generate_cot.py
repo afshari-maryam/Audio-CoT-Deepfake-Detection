@@ -189,15 +189,20 @@ def main():
         items = json.load(f)
 
     out_path = Path(args.output)
-    # Resume: load existing output if present
+    # Resume: find how many items already have CoT filled
     if out_path.exists():
         with open(out_path) as f:
-            done = json.load(f)
+            existing = json.load(f)
+        # Count items where cot is actually generated (not empty)
+        done = [x for x in existing if x.get("cot", "").strip()]
+        skip = len(done)
+        print(f"Resuming: {skip}/{len(items)} items already have CoT.")
     else:
         done = []
+        skip = 0
 
     for i, item in enumerate(items):
-        if i < args.start or i < len(done):
+        if i < args.start or i < skip:
             continue
         print(f"[{i+1}/{len(items)}] {item['audio2']}")
         try:

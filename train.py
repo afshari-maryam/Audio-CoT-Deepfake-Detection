@@ -25,7 +25,7 @@ from pathlib import Path
 
 import torch
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import get_cosine_schedule_with_warmup
+from transformers import get_cosine_schedule_with_warmup
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 

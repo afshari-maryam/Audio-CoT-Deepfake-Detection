@@ -203,20 +203,27 @@ def main():
         items = json.load(f)
 
     out_path = Path(args.output)
-    # Resume: find how many items already have CoT filled
-    if out_path.exists():
+
+    # Resume: load existing output and merge with manifest
+    # Always keep ALL items — only update cot/cot_short for processed ones
+    if out_path.exists() and out_path != Path(args.manifest):
         with open(out_path) as f:
             existing = json.load(f)
-        # Count items where cot is actually generated (not empty)
-        done = [x for x in existing if x.get("cot", "").strip()]
-        skip = len(done)
-        print(f"Resuming: {skip}/{len(items)} items already have CoT.")
+        cot_map = {x["audio2"]: x for x in existing if x.get("cot", "").strip()}
     else:
-        done = []
-        skip = 0
+        cot_map = {}
+
+    # Apply already-generated CoT back to full manifest
+    for item in items:
+        if item["audio2"] in cot_map:
+            item["cot"]       = cot_map[item["audio2"]].get("cot", "")
+            item["cot_short"] = cot_map[item["audio2"]].get("cot_short", "")
+
+    skip = sum(1 for x in items if x.get("cot", "").strip())
+    print(f"Resuming: {skip}/{len(items)} items already have CoT.")
 
     for i, item in enumerate(items):
-        if i < args.start or i < skip:
+        if i < args.start or item.get("cot", "").strip():
             continue
         print(f"[{i+1}/{len(items)}] {item['audio2']}")
         try:
@@ -225,11 +232,11 @@ def main():
             )
         except Exception as e:
             print(f"  ERROR: {e}")
-        done.append(item)
+        # Save ALL items every time — manifest never gets truncated
         with open(out_path, "w") as f:
-            json.dump(done, f, indent=2)
+            json.dump(items, f, indent=2)
 
-    print(f"Done. Saved {len(done)} items to {out_path}")
+    print(f"Done. Saved {len(items)} items to {out_path}")
 
 
 if __name__ == "__main__":
